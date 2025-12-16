@@ -86,7 +86,7 @@ seed:
 # Check service health
 health:
 	@echo "Checking service health..."
-	@curl -f http://localhost:8000/api/v1/heartbeat || echo "Chroma not healthy"
+	@curl -f http://localhost:8000/api/v2/heartbeat || echo "Chroma not healthy"
 
 # Database backup
 backup:
