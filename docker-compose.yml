@@ -1,0 +1,45 @@
+services:
+  # Chroma Vector Database
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: research-agent-chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage/chroma:/chroma/chroma
+    environment:
+      - CHROMA_SERVER_AUTH_PROVIDER=chromadb.auth.token_authn.TokenAuthenticationServerProvider
+      - CHROMA_SERVER_AUTH_CREDENTIALS=${CHROMA_AUTH_TOKEN:-default-token}
+      - CHROMA_SERVER_AUTH_TOKEN_TRANSPORT_HEADER=X-Chroma-Token
+      - ANONYMIZED_TELEMETRY=False
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: Chroma Admin UI for development
+  chroma-ui:
+    image: ghcr.io/amikos-tech/chromadb-admin:latest
+    container_name: research-agent-chroma-ui
+    ports:
+      - "3001:3000"
+    environment:
+      - CHROMA_URL=http://chroma:8000
+      - CHROMA_AUTH_TOKEN=${CHROMA_AUTH_TOKEN:-default-token}
+    depends_on:
+      chroma:
+        condition: service_healthy
+    networks:
+      - agent-network
+    profiles:
+      - dev
+
+networks:
+  agent-network:
+    driver: bridge
+
+volumes:
+  chroma-data:
