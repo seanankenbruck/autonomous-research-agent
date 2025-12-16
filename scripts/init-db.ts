@@ -81,15 +81,20 @@ async function initializeDatabase() {
 
     for (const collectionName of defaultCollections) {
       try {
-        await chromaClient.getCollection({ name: collectionName });
+        await chromaClient.getCollection({ 
+          name: collectionName,
+          embeddingFunction: undefined, // We'll provide embeddings manually
+        });
         console.log(`   ✓ Collection '${collectionName}' already exists`);
       } catch (error) {
         // Collection doesn't exist, create it
         await chromaClient.createCollection({
           name: collectionName,
+          embeddingFunction: undefined, // We'll provide embeddings manually
           metadata: { 
             description: `${collectionName.replace('_', ' ')} storage`,
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            embedding_source: 'claude-api' // Document that we use Claude embeddings
           },
         });
         console.log(`   ✓ Created collection '${collectionName}'`);
