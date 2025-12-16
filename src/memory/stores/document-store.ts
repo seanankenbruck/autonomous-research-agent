@@ -355,12 +355,14 @@ export class SQLiteDocumentStore implements IDocumentStore {
 
     // Update access tracking
     this.db.prepare(`
-      UPDATE semantic_facts 
+      UPDATE semantic_facts
       SET last_accessed = ?, access_count = access_count + 1
       WHERE id = ?
     `).run(Date.now(), factId);
 
-    return this.rowToFact(row);
+    // Fetch the updated row to get the incremented access_count
+    const updatedRow = stmt.get(factId) as any;
+    return this.rowToFact(updatedRow);
   }
 
   async updateFact(
