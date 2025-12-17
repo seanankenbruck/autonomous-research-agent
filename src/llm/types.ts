@@ -101,3 +101,37 @@ export interface LLMClientConfig {
   retryDelay?: number;
   timeout?: number;
 }
+
+// Embedding Definitions
+export interface EmbeddingConfig {
+  apiKey: string;
+  model?: string;
+  baseURL?: string;
+  maxBatchSize?: number;
+}
+
+export interface EmbeddingResponse {
+  embedding: number[];
+  model: string;
+  usage: {
+    totalTokens: number;
+  };
+}
+
+// Tool definitions for Voyage
+export interface VoyageEmbeddingRequest {
+  input: string | string[];
+  model: string;
+  input_type?: 'query' | 'document';
+}
+
+export interface VoyageEmbeddingResponse {
+  data: Array<{
+    embedding: number[];
+    index: number;
+  }>;
+  model: string;
+  usage: {
+    total_tokens: number;
+  };
+}
