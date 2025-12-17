@@ -24,6 +24,16 @@ export interface SearchOptions {
 }
 
 /**
+ * Chroma query result structure
+ */
+interface ChromaQueryResult {
+  ids: string[][];
+  distances: number[][];
+  documents: (string | null)[][];
+  metadatas: (Record<string, any> | null)[][];
+}
+
+/**
  * Vector store errors
  */
 export class VectorStoreError extends Error {
@@ -44,6 +54,10 @@ export class ChromaVectorStore implements IVectorStore {
   constructor(config: VectorStoreConfig) {
     this.client = new ChromaClient({
       path: `http://${config.host}:${config.port}`,
+      auth: config.authToken ? {
+        provider: "token",
+        credentials: config.authToken,
+      } : undefined,
     });
     this.config = config;
     this.collectionCache = new Map<string, Collection>();
@@ -171,7 +185,7 @@ export class ChromaVectorStore implements IVectorStore {
       });
 
       // Transform and filter results
-      const matches = this.transformResults(queryResults);
+      const matches = this.transformResults(queryResults as ChromaQueryResult);
 
       // Apply minScore filter if specified
       if (options?.minScore !== undefined) {
@@ -211,9 +225,9 @@ export class ChromaVectorStore implements IVectorStore {
 
       return {
         id: result.ids[0],
-        embedding: result.embeddings[0] ?? [],
-        document: result.documents[0] ?? "",
-        metadata: result.metadatas[0] ?? {},
+        embedding: result.embeddings?.[0] ?? [],
+        document: result.documents?.[0] ?? "",
+        metadata: result.metadatas?.[0] ?? {},
       };
     } catch (error) {
       throw new VectorStoreError(
@@ -256,8 +270,8 @@ export class ChromaVectorStore implements IVectorStore {
     }>
   ): Promise<void> {
     try {
+      // Validate all embeddings
       for (const item of items) {
-        // Validate all embeddings
         this.validateEmbedding(item.embedding);
       }
 
@@ -308,8 +322,12 @@ export class ChromaVectorStore implements IVectorStore {
 
   /**
    * Transform Chroma results to our format
+   * 
+   * Note: ChromaDB uses L2 (Euclidean) distance by default, where smaller distance = more similar.
+   * We convert to a similarity score using: score = 1 / (1 + distance)
+   * This gives us a 0-1 scale where 1 is most similar.
    */
-  private transformResults(chromaResults: any): SearchMatch[] {
+  private transformResults(chromaResults: ChromaQueryResult): SearchMatch[] {
     const results: SearchMatch[] = [];
 
     // ChromaDB returns results as parallel arrays
@@ -321,8 +339,6 @@ export class ChromaVectorStore implements IVectorStore {
     // Transform from parallel arrays to objects
     for (let i = 0; i < ids.length; i++) {
       // Convert distance to similarity score (0-1, where 1 is most similar)
-      // ChromaDB uses L2 distance, so smaller distance = more similar
-      // We convert using: score = 1 / (1 + distance)
       const distance = distances[i] ?? Infinity;
       const score = 1 / (1 + distance);
 
