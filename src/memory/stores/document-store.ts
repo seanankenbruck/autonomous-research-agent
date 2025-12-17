@@ -17,7 +17,7 @@ import type {
   Action,
   Outcome,
   Finding,
-} from "../types";
+} from "../../agent/types";
 
 export class SQLiteDocumentStore implements IDocumentStore {
   private db: Database.Database;
@@ -640,7 +640,7 @@ export class SQLiteDocumentStore implements IDocumentStore {
       timesUsed: row.times_used,
       refinements: JSON.parse(row.refinements),
       createdAt: new Date(row.created_at),
-      lastUsed: row.last_used ? new Date(row.last_used) : undefined,
+      lastUsed: row.last_used ? new Date(row.last_used) : new Date(),
       lastRefined: new Date(row.last_refined),
     };
   }
