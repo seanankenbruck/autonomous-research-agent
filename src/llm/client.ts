@@ -5,9 +5,9 @@ import type {
   CompletionResponse,
   StreamChunk,
   LLMClientConfig,
-  LLMError,
   ToolUseBlock
 } from './types';
+import { LLMError } from './types';
 import { Logger, LogLevel } from '../utils/logger';
 
 export class LLMClient {
@@ -63,106 +63,106 @@ export class LLMClient {
     });
 
     try {
-        const startTime = Date.now();
+      const startTime = Date.now();
 
-        // Merge options with defaults
-        const model = options.model ?? this.config.defaultModel;
-        const maxTokens = options.maxTokens ?? 4096;
-        const temperature = options.temperature ?? 1.0;
+      // Merge options with defaults
+      const model = options.model ?? this.config.defaultModel;
+      const maxTokens = options.maxTokens ?? 4096;
+      const temperature = options.temperature ?? 1.0;
 
-        // Validate messages
-        if (!messages || messages.length === 0) {
-            throw new Error('Messages array cannot be empty');
-        }
+      // Validate messages
+      if (!messages || messages.length === 0) {
+        throw new Error('Messages array cannot be empty');
+      }
 
-        // Format request for Anthropic API
-        const requestParams: Anthropic.MessageCreateParams = {
+      // Format request for Anthropic API
+      const requestParams: Anthropic.MessageCreateParams = {
         model,
         max_tokens: maxTokens,
         messages: messages.map(msg => ({
-            role: msg.role,
-            content: typeof msg.content === 'string'
+          role: msg.role,
+          content: typeof msg.content === 'string'
             ? msg.content
             : msg.content.map(block => {
                 if (block.type === 'text') {
-                    return { type: 'text', text: block.text };
+                  return { type: 'text', text: block.text };
                 } else if (block.type === 'tool_use') {
-                    return {
+                  return {
                     type: 'tool_use',
                     id: block.id,
                     name: block.name,
                     input: block.input,
-                    };
+                  };
                 } else if (block.type === 'tool_result') {
-                    return {
+                  return {
                     type: 'tool_result',
                     tool_use_id: block.tool_use_id,
                     content: block.content,
                     is_error: block.is_error,
-                    };
+                  };
                 }
                 return block;
-                }),
+              }),
         })),
         temperature,
-        };
+      };
 
-        // Add optional parameters
-        if (options.systemPrompt) {
+      // Add optional parameters
+      if (options.systemPrompt) {
         requestParams.system = options.systemPrompt;
-        }
-        if (options.tools && options.tools.length > 0) {
+      }
+      if (options.tools && options.tools.length > 0) {
         requestParams.tools = options.tools;
-        }
-        if (options.stopSequences && options.stopSequences.length > 0) {
+      }
+      if (options.stopSequences && options.stopSequences.length > 0) {
         requestParams.stop_sequences = options.stopSequences;
-        }
+      }
 
-        // Execute with retry logic
-        this.logger.debug('Sending completion request', { model, maxTokens });
-        const response = await this.executeWithRetry(() =>
-            this.client.messages.create(requestParams)
-        );
+      // Execute with retry logic
+      this.logger.debug('Sending completion request', { model, maxTokens });
+      const response = await this.executeWithRetry(() =>
+        this.client.messages.create(requestParams)
+      );
 
-        // Parse and return response
-        const duration = Date.now() - startTime;
-        this.logger.info('Completion successful', {
-            model: response.model,
-            inputTokens: response.usage.input_tokens,
-            outputTokens: response.usage.output_tokens,
-            duration,
-        });
+      // Parse and return response
+      const duration = Date.now() - startTime;
+      this.logger.info('Completion successful', {
+        model: response.model,
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        duration,
+      });
 
-        return {
-            id: response.id,
-            type: 'message',
-            role: 'assistant',
-            content: response.content.map(block => {
-                if (block.type === 'text') {
-                return { type: 'text', text: block.text };
-                } else if (block.type === 'tool_use') {
-                return {
-                    type: 'tool_use',
-                    id: block.id,
-                    name: block.name,
-                    input: block.input as Record<string, unknown>,
-                };
-                }
-                return block as any;
-            }),
-            model: response.model,
-            stopReason: response.stop_reason as 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use',
-            stopSequence: response.stop_sequence ?? undefined,
-            usage: {
-                inputTokens: response.usage.input_tokens,
-                outputTokens: response.usage.output_tokens,
-            },
-        };
+      return {
+        id: response.id,
+        type: 'message',
+        role: 'assistant',
+        content: response.content.map(block => {
+          if (block.type === 'text') {
+            return { type: 'text', text: block.text };
+          } else if (block.type === 'tool_use') {
+            return {
+              type: 'tool_use',
+              id: block.id,
+              name: block.name,
+              input: block.input as Record<string, unknown>,
+            };
+          }
+          return block as any;
+        }),
+        model: response.model,
+        stopReason: response.stop_reason as 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use',
+        stopSequence: response.stop_sequence ?? undefined,
+        usage: {
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens,
+        },
+      };
     } catch (error) {
-        this.logger.error('Completion failed', error, {
-            messageCount: messages.length,
-        });
-        throw error;
+      this.logger.error('Completion failed', error, {
+        messageCount: messages.length,
+      });
+      throw error;
     }
   }
 
@@ -243,7 +243,7 @@ export class LLMClient {
         requestParams.stop_sequences = options.stopSequences;
       }
 
-      // Create streaming request (note: we don't use retry logic for streaming)
+      // Create streaming request
       this.logger.debug('Starting stream', { model, maxTokens });
       const stream = this.client.messages.stream(requestParams);
 
@@ -312,9 +312,10 @@ export class LLMClient {
    * @returns Concatenated text from all text blocks
    */
   extractText(response: CompletionResponse): string {
-    // Filter for text blocks
-    // Concatenate text content
-    // Return combined string
+    return response.content
+      .filter(block => block.type === 'text')
+      .map(block => (block as any).text)
+      .join('');
   }
 
   /**
@@ -324,15 +325,15 @@ export class LLMClient {
    * @returns Array of tool use blocks
    */
   extractToolUses(response: CompletionResponse): ToolUseBlock[] {
-    // Filter for tool_use blocks
-    // Return typed array
+    return response.content
+      .filter(block => block.type === 'tool_use') as ToolUseBlock[];
   }
 
   /**
    * Check if response has tool uses
    */
   hasToolUses(response: CompletionResponse): boolean {
-    // Check if any content blocks are tool_use
+    return response.content.some(block => block.type === 'tool_use');
   }
 
   /**
@@ -348,11 +349,37 @@ export class LLMClient {
     fn: () => Promise<T>,
     retries: number = this.config.maxRetries
   ): Promise<T> {
-    // Try operation
-    // Catch errors
-    // Determine if retryable
-    // Wait with exponential backoff
-    // Retry or throw
+    let lastError: unknown;
+    
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+        const llmError = this.handleError(error);
+        
+        // If not retryable or out of retries, throw immediately
+        if (!llmError.retryable || attempt === retries) {
+          throw llmError;
+        }
+        
+        // Calculate backoff delay with exponential increase
+        const backoffDelay = this.config.retryDelay * Math.pow(2, attempt);
+        
+        this.logger.warn(`Request failed, retrying in ${backoffDelay}ms`, {
+          attempt: attempt + 1,
+          maxRetries: retries,
+          error: llmError.message,
+          code: llmError.code,
+        });
+        
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+      }
+    }
+    
+    // Should never reach here, but TypeScript needs this
+    throw this.handleError(lastError);
   }
 
   /**
@@ -362,10 +389,82 @@ export class LLMClient {
    * Converts Anthropic SDK errors to LLMError
    */
   private handleError(error: unknown): LLMError {
-    // Check error type
-    // Extract relevant info
-    // Determine if retryable
-    // Create and return LLMError
+    // If already an LLMError, return as-is
+    if (error instanceof Error && error.name === 'LLMError') {
+      return error as LLMError;
+    }
+
+    // Handle Anthropic SDK errors
+    if (error instanceof Anthropic.APIError) {
+      const statusCode = error.status;
+      const message = error.message;
+      
+      // Determine error code and retryability
+      let code: string;
+      let retryable: boolean;
+      
+      if (statusCode === 429) {
+        // Rate limit
+        code = 'RATE_LIMIT';
+        retryable = true;
+      } else if (statusCode === 500 || statusCode === 502 || statusCode === 503 || statusCode === 504) {
+        // Server errors
+        code = 'SERVER_ERROR';
+        retryable = true;
+      } else if (statusCode === 401) {
+        // Authentication
+        code = 'AUTHENTICATION_ERROR';
+        retryable = false;
+      } else if (statusCode === 400) {
+        // Bad request
+        code = 'BAD_REQUEST';
+        retryable = false;
+      } else if (statusCode === 404) {
+        // Not found (model doesn't exist, etc.)
+        code = 'NOT_FOUND';
+        retryable = false;
+      } else {
+        // Unknown API error
+        code = 'API_ERROR';
+        retryable = false;
+      }
+      
+      const llmError = new Error(message) as LLMError;
+      llmError.name = 'LLMError';
+      llmError.code = code;
+      llmError.statusCode = statusCode;
+      llmError.retryable = retryable;
+      
+      return llmError;
+    }
+    
+    // Handle network/timeout errors
+    if (error instanceof Error) {
+      if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
+        const llmError = new Error(error.message) as LLMError;
+        llmError.name = 'LLMError';
+        llmError.code = 'TIMEOUT';
+        llmError.retryable = true;
+        return llmError;
+      }
+      
+      if (error.message.includes('ECONNREFUSED') || error.message.includes('ENOTFOUND')) {
+        const llmError = new Error(error.message) as LLMError;
+        llmError.name = 'LLMError';
+        llmError.code = 'CONNECTION_ERROR';
+        llmError.retryable = true;
+        return llmError;
+      }
+    }
+    
+    // Unknown error
+    const message = error instanceof Error ? error.message : String(error);
+    const llmError = new Error(message) as LLMError;
+    llmError.name = 'LLMError';
+    llmError.code = 'UNKNOWN_ERROR';
+    llmError.retryable = false;
+    
+    return llmError;
   }
 
   /**
@@ -375,7 +474,9 @@ export class LLMClient {
    * or similar for more accurate counting
    */
   estimateTokens(text: string): number {
-    // Simple estimation: ~4 chars per token
-    // For production, use proper tokenizer
+    // Simple estimation: ~4 characters per token
+    // This is a rough approximation and should be replaced with
+    // a proper tokenizer for production use
+    return Math.ceil(text.length / 4);
   }
 }
