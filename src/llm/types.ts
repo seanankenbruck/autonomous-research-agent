@@ -103,11 +103,19 @@ export interface LLMClientConfig {
 }
 
 // Embedding Definitions
+export interface EmbeddingError extends Error {
+  name: 'EmbeddingError';
+  statusCode?: number;
+  retryable?: boolean;
+}
+
 export interface EmbeddingConfig {
   apiKey: string;
   model?: string;
   baseURL?: string;
   maxBatchSize?: number;
+  maxRetries?: number;
+  retryDelay?: number;
 }
 
 export interface EmbeddingResponse {
