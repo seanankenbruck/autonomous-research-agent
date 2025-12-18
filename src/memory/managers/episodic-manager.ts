@@ -88,6 +88,78 @@ export class EpisodicManager {
   }
 
   /**
+   * Store multiple episodes efficiently using batch operations
+   * More efficient than calling storeEpisode multiple times
+   */
+  async storeEpisodes(
+    episodes: Omit<EpisodicMemory, 'id'>[]
+  ): Promise<EpisodicMemory[]> {
+    this.logger.debug(`Storing ${episodes.length} episodes in batch`);
+
+    if (episodes.length === 0) {
+      return [];
+    }
+
+    const fullEpisodes: EpisodicMemory[] = [];
+    const embeddingBatch: Array<{
+      id: string;
+      embedding: number[];
+      metadata: Record<string, any>;
+      document: string;
+    }> = [];
+
+    // First, create full episodes with IDs and store in document store
+    for (const episode of episodes) {
+      const id = uuidv4();
+      const fullEpisode: EpisodicMemory = { ...episode, id };
+
+      await this.documentStore.storeEpisode(fullEpisode);
+      fullEpisodes.push(fullEpisode);
+
+      // Generate embedding for batch storage
+      try {
+        const embedding = await this.embeddingClient.embed(
+          fullEpisode.summary,
+          'document'
+        );
+
+        embeddingBatch.push({
+          id,
+          embedding,
+          metadata: {
+            sessionId: episode.sessionId,
+            topic: episode.topic,
+            timestamp: episode.timestamp.toISOString(),
+            success: episode.success,
+          },
+          document: fullEpisode.summary,
+        });
+      } catch (error) {
+        this.logger.warn(`Failed to generate embedding for episode ${id}`, error);
+        // Continue with other episodes
+      }
+    }
+
+    // Store all embeddings in a single batch operation
+    if (embeddingBatch.length > 0) {
+      try {
+        await this.vectorStore.storeBatch(
+          this.VECTOR_COLLECTION,
+          embeddingBatch
+        );
+        this.logger.debug(
+          `Stored ${embeddingBatch.length} episode embeddings in batch`
+        );
+      } catch (error) {
+        this.logger.error('Failed to store episode embeddings in batch', error);
+        // Episodes are still stored in document store
+      }
+    }
+
+    return fullEpisodes;
+  }
+
+  /**
    * Retrieve a specific episode by ID
    */
   async getEpisode(id: string): Promise<EpisodicMemory | null> {
