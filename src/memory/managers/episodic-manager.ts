@@ -1,5 +1,3 @@
-// src/memory/managers/episodic-manager.ts
-
 import { v4 as uuidv4 } from 'uuid';
 import { SQLiteDocumentStore } from '../stores/document-store';
 import { ChromaVectorStore } from '../stores/vector-store';
