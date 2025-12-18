@@ -450,6 +450,11 @@ export class SQLiteDocumentStore implements IDocumentStore {
     return facts;
   }
 
+  async deleteFact(factId: string): Promise<void> {
+    const stmt = this.db.prepare('DELETE FROM semantic_facts WHERE id = ?');
+    stmt.run(factId);
+  }
+
   // ============================================================================
   // Procedural Memory Operations
   // ============================================================================
