@@ -586,3 +586,24 @@ export interface FactFilters {
   tags?: string[];
   limit?: number;
 }
+
+export interface EpisodicSearchOptions {
+  maxResults?: number;
+  maxTokens?: number;
+  sessionId?: string;
+  startTime?: Date;
+  endTime?: Date;
+  similarityThreshold?: number;
+  topic?: string;
+}
+
+// ============================================================================
+// Memory System Configuration
+// ============================================================================
+
+export interface MemorySystemConfig {
+  consolidationThresholdDays: number;
+  reflectionInterval: number; // turns
+  maxContextTokens: number;
+  autoConsolidate: boolean;
+}
