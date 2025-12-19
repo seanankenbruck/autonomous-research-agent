@@ -1,5 +1,3 @@
-// src/memory/managers/semantic-manager.ts
-
 import { v4 as uuidv4 } from 'uuid';
 import { SQLiteDocumentStore } from '../stores/document-store';
 import { ChromaVectorStore } from '../stores/vector-store';
@@ -248,6 +246,14 @@ Return only the JSON array, no additional text.`;
    */
   async getFact(id: string): Promise<SemanticMemory | null> {
     return this.documentStore.getFact(id);
+  }
+
+  /**
+   * Retrieve all facts
+   * @returns List of facts
+   */
+  async getAllFacts(): Promise<SemanticMemory[]> {
+    return this.documentStore.listFacts({});
   }
 
   /**
