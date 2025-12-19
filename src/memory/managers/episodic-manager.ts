@@ -358,37 +358,37 @@ Format as a bullet list.`;
  * Helper to create an episode from individual components
  * Useful when building episodes programmatically
  */
-async createEpisode(
-  sessionId: string,
-  topic: string,
-  actions: Action[],
-  outcomes: Outcome[],
-  findings: Finding[],
-  summary: string,
-  options: {
-    tags?: string[];
-    feedback?: UserFeedback;
-  } = {}
-): Promise<EpisodicMemory> {
-  const timestamps = actions.map(a => a.timestamp.getTime());
-  const duration = timestamps.length > 1 
-    ? Math.max(...timestamps) - Math.min(...timestamps)
-    : 0;
-  
-  const success = outcomes.every(o => o.success);
-  
-  return this.storeEpisode({
-    sessionId,
-    timestamp: new Date(),
-    topic,
-    actions,
-    outcomes,
-    findings,
-    duration,
-    success,
-    feedback: options.feedback,
-    summary,
-    tags: options.tags || [],
-  });
-}
+  async createEpisode(
+    sessionId: string,
+    topic: string,
+    actions: Action[],
+    outcomes: Outcome[],
+    findings: Finding[],
+    summary: string,
+    options: {
+      tags?: string[];
+      feedback?: UserFeedback;
+    } = {}
+  ): Promise<EpisodicMemory> {
+    const timestamps = actions.map(a => a.timestamp.getTime());
+    const duration = timestamps.length > 1 
+      ? Math.max(...timestamps) - Math.min(...timestamps)
+      : 0;
+    
+    const success = outcomes.every(o => o.success);
+    
+    return this.storeEpisode({
+      sessionId,
+      timestamp: new Date(),
+      topic,
+      actions,
+      outcomes,
+      findings,
+      duration,
+      success,
+      feedback: options.feedback,
+      summary,
+      tags: options.tags || [],
+    });
+  }
 }
