@@ -65,6 +65,44 @@ export interface Goal {
   estimatedComplexity: "simple" | "moderate" | "complex";
 }
 
+export interface SessionSummary {
+  id: string;
+  topic: string;
+  status: SessionStatus;
+  duration: number; // milliseconds
+  createdAt: Date;
+  completedAt?: Date;
+}
+
+export interface SessionStatistics {
+  totalSessions: number;
+  completedSessions: number;
+  activeSessions: number;
+  failedSessions: number;
+  averageDuration: number;
+  completionRate: number;
+  topTopics: Array<{ topic: string; count: number }>;
+}
+
+// ============================================================================
+// Strategy Management
+// ============================================================================
+
+export interface StrategyRecommendation {
+  strategy: ProceduralMemory;
+  relevanceScore: number;
+  reasoning: string;
+}
+
+export interface StrategyAnalysis {
+  totalStrategies: number;
+  averageSuccessRate: number;
+  mostSuccessful: ProceduralMemory[];
+  leastSuccessful: ProceduralMemory[];
+  mostUsed: ProceduralMemory[];
+  recentlyRefined: ProceduralMemory[];
+}
+
 // ============================================================================
 // Agent State
 // ============================================================================
