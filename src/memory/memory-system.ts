@@ -622,6 +622,25 @@ export class MemorySystem {
     return this.episodicManager.extractInsights(recentEpisodes);
   }
 
+  /**
+   * Get all episodes for a session
+   * Public accessor for reflection engine
+   */
+  async getSessionEpisodes(sessionId: string): Promise<EpisodicMemory[]> {
+    return this.episodicManager.getSessionEpisodes(sessionId);
+  }
+
+  /**
+   * Extract strategy from recent episodes
+   * Public accessor for reflection engine
+   */
+  async extractStrategyFromEpisodes(
+    episodes: EpisodicMemory[],
+    topic: string
+  ): Promise<ProceduralMemory | null> {
+    return this.proceduralManager.extractStrategyFromEpisodes(episodes, topic);
+  }
+
   // ============================================================================
   // Utility Methods
   // ============================================================================
