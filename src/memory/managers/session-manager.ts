@@ -5,28 +5,12 @@ import type {
   Session,
   SessionStatus,
   SessionFilters,
+  SessionSummary,
+  SessionStatistics,
   Goal,
   AgentState,
 } from '../../agent/types';
 
-interface SessionSummary {
-  id: string;
-  topic: string;
-  status: SessionStatus;
-  duration: number; // milliseconds
-  createdAt: Date;
-  completedAt?: Date;
-}
-
-interface SessionStatistics {
-  totalSessions: number;
-  completedSessions: number;
-  activeSessions: number;
-  failedSessions: number;
-  averageDuration: number;
-  completionRate: number;
-  topTopics: Array<{ topic: string; count: number }>;
-}
 
 export class SessionManager {
   private currentSession: Session | null = null;

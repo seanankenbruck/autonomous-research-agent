@@ -8,6 +8,8 @@ import type {
   ProceduralMemory,
   Refinement,
   EpisodicMemory,
+  StrategyAnalysis,
+  StrategyRecommendation
 } from '../../agent/types';
 
 interface StrategySearchOptions {
@@ -15,21 +17,6 @@ interface StrategySearchOptions {
   minSuccessRate?: number;
   requiredTools?: string[];
   similarityThreshold?: number;
-}
-
-interface StrategyRecommendation {
-  strategy: ProceduralMemory;
-  relevanceScore: number;
-  reasoning: string;
-}
-
-interface StrategyAnalysis {
-  totalStrategies: number;
-  averageSuccessRate: number;
-  mostSuccessful: ProceduralMemory[];
-  leastSuccessful: ProceduralMemory[];
-  mostUsed: ProceduralMemory[];
-  recentlyRefined: ProceduralMemory[];
 }
 
 export class ProceduralManager {
