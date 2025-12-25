@@ -84,10 +84,17 @@ export function createMockLLMClient(options: {
   const responses = options.responses || new Map();
 
   return {
-    complete: vi.fn().mockImplementation((prompt: string) => {
+    complete: vi.fn().mockImplementation((messages: any) => {
+      // Handle both string prompts and message arrays
+      const promptText = typeof messages === 'string'
+        ? messages
+        : Array.isArray(messages)
+        ? messages.map(m => m.content).join(' ')
+        : '';
+
       // Check if specific response is configured for this prompt
       for (const [key, response] of responses.entries()) {
-        if (prompt.includes(key)) {
+        if (promptText.includes(key)) {
           return Promise.resolve(response);
         }
       }
