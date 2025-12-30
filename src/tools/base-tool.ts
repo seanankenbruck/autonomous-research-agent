@@ -32,7 +32,7 @@ export abstract class BaseTool<TInput = any, TOutput = any, TConfig extends Tool
       // Validate input
       const isValid = await this.validateInput(input);
       if (!isValid) {
-        return this.createErrorResult('Invalid input provided', startTime);
+        return this.createErrorResult('Input validation failed', startTime);
       }
 
       // Check if tool is enabled
@@ -111,7 +111,7 @@ export abstract class BaseTool<TInput = any, TOutput = any, TConfig extends Tool
     return Promise.race([
       fn(),
       new Promise<T>((_, reject) =>
-        setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs)
+        setTimeout(() => reject(new Error(`Execution timed out after ${timeoutMs}ms`)), timeoutMs)
       ),
     ]);
   }
@@ -190,6 +190,8 @@ export abstract class BaseTool<TInput = any, TOutput = any, TConfig extends Tool
    */
   protected sanitizeString(str: string, maxLength?: number): string {
     let sanitized = str.trim();
+    // Remove HTML tags
+    sanitized = this.stripHtmlTags(sanitized);
     if (maxLength && sanitized.length > maxLength) {
       sanitized = sanitized.substring(0, maxLength);
     }
