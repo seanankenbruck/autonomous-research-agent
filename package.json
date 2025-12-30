@@ -27,15 +27,21 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
     "@chroma-core/default-embed": "^0.1.9",
+    "@mozilla/readability": "^0.6.0",
+    "@tavily/core": "^0.6.3",
+    "axios": "^1.13.2",
     "better-sqlite3": "^11.7.0",
+    "cheerio": "^1.1.2",
     "chromadb": "^3.1.8",
     "dotenv": "^16.4.7",
+    "jsdom": "^27.4.0",
     "uuid": "^11.0.3",
     "winston": "^3.17.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
+    "@types/jsdom": "^27.0.0",
     "@types/node": "^22.10.2",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.49.0",
