@@ -4,10 +4,34 @@
  */
 
 import { config as dotenvConfig } from "dotenv";
-import type { AgentConfig } from "./types";
 
 // Load .env file
 dotenvConfig();
+
+/**
+ * Configuration interface
+ */
+export interface AgentConfig {
+  // API Keys
+  anthropicApiKey: string;
+  anthropicModel: string;
+  tavilyApiKey?: string;
+
+  // Agent settings
+  maxIterations: number;
+  reflectionInterval: number;
+  maxMemoryItems: number;
+
+  // Storage
+  chromaHost: string;
+  chromaPort: number;
+  chromaAuthToken?: string;
+  sqliteDbPath: string;
+
+  // Logging
+  logLevel: string;
+  logDir: string;
+}
 
 /**
  * Get configuration from environment variables
