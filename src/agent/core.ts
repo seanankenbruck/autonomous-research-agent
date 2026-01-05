@@ -337,7 +337,7 @@ Aim for 5-8 steps that logically progress from information gathering → analysi
       {
         id: 'step-1',
         description: 'Search for initial information on topic',
-        action: 'search',
+        action: 'web_search',
         dependencies: [],
         status: 'pending',
         expectedOutcome: 'Relevant sources and initial information',
@@ -345,7 +345,7 @@ Aim for 5-8 steps that logically progress from information gathering → analysi
       {
         id: 'step-2',
         description: 'Fetch and extract content from promising sources',
-        action: 'fetch',
+        action: 'web_fetch',
         dependencies: ['step-1'],
         status: 'pending',
         expectedOutcome: 'Detailed content from sources',
@@ -353,7 +353,7 @@ Aim for 5-8 steps that logically progress from information gathering → analysi
       {
         id: 'step-3',
         description: 'Analyze content to extract key facts',
-        action: 'analyze',
+        action: 'content_analyzer',
         dependencies: ['step-2'],
         status: 'pending',
         expectedOutcome: 'Structured facts and insights',
@@ -361,7 +361,7 @@ Aim for 5-8 steps that logically progress from information gathering → analysi
       {
         id: 'step-4',
         description: 'Search for additional information to fill gaps',
-        action: 'search',
+        action: 'web_search',
         dependencies: ['step-3'],
         status: 'pending',
         expectedOutcome: 'Additional sources addressing gaps',
@@ -369,7 +369,7 @@ Aim for 5-8 steps that logically progress from information gathering → analysi
       {
         id: 'step-5',
         description: 'Synthesize findings into cohesive result',
-        action: 'synthesize',
+        action: 'synthesizer',
         dependencies: ['step-3', 'step-4'],
         status: 'pending',
         expectedOutcome: 'Final synthesized research output',

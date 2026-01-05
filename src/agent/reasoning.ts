@@ -314,7 +314,7 @@ Provide a concise analysis of the situation and the decision-making process.`;
    */
   private getFallbackOption(context: ReasoningContext): ReasoningOption {
     // Default to search if in early phase, otherwise synthesize
-    const action = context.currentProgress.currentPhase === 'gathering' ? 'search' : 'synthesize';
+    const action = context.currentProgress.currentPhase === 'gathering' ? 'web_search' : 'synthesizer';
 
     return {
       id: 'fallback-option',
