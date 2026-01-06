@@ -113,7 +113,7 @@ export class ReasoningEngine {
       sessionId,
       type: this.inferActionType(selectedOption.action),
       tool: selectedOption.action,
-      parameters: this.extractParameters(selectedOption.action),
+      parameters: this.extractParameters(selectedOption.action, goal, selectedOption.rationale, workingMemory),
       reasoning: selectedOption.rationale,
       strategy: memoryContext.recommendedStrategies[0]?.strategyName,
       timestamp: new Date(),
@@ -242,20 +242,45 @@ ${context.relevantMemories.slice(0, 5).map((m, i) => `${i + 1}. ${m}`).join('\n'
 CONSTRAINTS:
 ${context.constraints.map((c, i) => `${i + 1}. ${c}`).join('\n') || 'None'}
 
-Propose 2-4 different actions I could take next. For each option, provide:
-1. A unique ID (option-1, option-2, etc.)
-2. The action/tool to use
-3. Rationale for this action
-4. Expected benefit
-5. Potential risks
-6. Estimated cost (1-10, where 1 is cheap, 10 is expensive)
-7. Confidence (0-1, how confident you are this will help)
+Propose 2-4 different actions I could take next. You MUST respond with ONLY valid JSON in this exact format:
+
+{
+  "options": [
+    {
+      "id": "option-1",
+      "action": "web_search",
+      "rationale": "Need to gather initial information about the topic",
+      "expectedBenefit": "Will provide foundational knowledge and credible sources",
+      "potentialRisks": ["May find outdated information", "Results may vary in quality"],
+      "estimatedCost": 3,
+      "confidence": 0.8
+    },
+    {
+      "id": "option-2",
+      "action": "content_analyzer",
+      "rationale": "Analyze previously fetched content to extract facts",
+      "expectedBenefit": "Extract structured information from existing sources",
+      "potentialRisks": ["Content may not contain relevant facts"],
+      "estimatedCost": 2,
+      "confidence": 0.7
+    }
+  ]
+}
+
+IMPORTANT RULES:
+- The "action" field MUST be one of: ${context.availableTools.join(', ')}
+- The "potentialRisks" field MUST be an array of strings
+- The "estimatedCost" field MUST be a number from 1-10
+- The "confidence" field MUST be a decimal number from 0-1
+- Do NOT include any markdown formatting or code blocks
+- Do NOT include any text before or after the JSON object
 
 Consider:
 - What information gaps exist?
 - What would move us closer to the goal?
 - What has worked in similar situations?
-- What risks should we avoid?`;
+- What risks should we avoid?
+- Choose actions appropriate for the current phase (${context.currentProgress.currentPhase})`;
   }
 
   /**
@@ -313,15 +338,34 @@ Provide a concise analysis of the situation and the decision-making process.`;
    * Get fallback option when LLM fails
    */
   private getFallbackOption(context: ReasoningContext): ReasoningOption {
-    // Default to search if in early phase, otherwise synthesize
-    const action = context.currentProgress.currentPhase === 'gathering' ? 'web_search' : 'synthesizer';
+    // Intelligent fallback based on phase and progress
+    let action: string;
+    let rationale: string;
+
+    if (context.currentProgress.currentPhase === 'gathering' || context.currentProgress.sourcesGathered === 0) {
+      // Always start with web search if we have no sources or in gathering phase
+      action = 'web_search';
+      rationale = 'Fallback to web search - need to gather initial sources';
+    } else if (context.currentProgress.sourcesGathered > 0 && context.currentProgress.factsExtracted === 0) {
+      // We have sources but no facts - analyze them
+      action = 'content_analyzer';
+      rationale = 'Fallback to content analyzer - have sources but need to extract facts';
+    } else if (context.currentProgress.factsExtracted > 3) {
+      // We have enough facts - synthesize
+      action = 'synthesizer';
+      rationale = 'Fallback to synthesizer - have enough facts to create summary';
+    } else {
+      // Default: gather more information
+      action = 'web_search';
+      rationale = 'Fallback to web search - need more information';
+    }
 
     return {
       id: 'fallback-option',
       action,
-      rationale: 'Fallback action due to reasoning failure',
-      expectedBenefit: 'Continue making progress',
-      potentialRisks: ['May not be optimal'],
+      rationale,
+      expectedBenefit: 'Continue making progress with safe default action',
+      potentialRisks: ['May not be the optimal action for current situation'],
       estimatedCost: 5,
       confidence: 0.3,
     };
@@ -495,11 +539,68 @@ Respond with a JSON object with a "learnings" array of strings.`;
 
   /**
    * Extract parameters from action string
-   * This is a simple implementation - can be enhanced
+   * Enriches parameters with data from working memory
    */
-  private extractParameters(action: string): Record<string, any> {
-    // For now, return empty params - will be filled by agent core
-    return {};
+  private extractParameters(action: string, goal: Goal, rationale: string, workingMemory: WorkingMemory): Record<string, any> {
+    // Generate sensible default parameters based on the tool and context
+    switch (action) {
+      case 'web_search':
+        // Extract search query from goal description or rationale
+        return {
+          query: goal.description,
+          maxResults: 10,
+          searchDepth: 'basic'
+        };
+
+      case 'web_fetch':
+        // For fetch, try to extract URL from rationale or use a default approach
+        // This is a fallback - ideally the LLM should provide the URL
+        return {
+          url: '', // Empty URL will cause validation error, which is expected
+          extractContent: true,
+          includeMetadata: true
+        };
+
+      case 'content_analyzer':
+        // Analyze tool needs content from previously fetched sources
+        // Combine all content from recent successful outcomes
+        const recentContent = workingMemory.recentOutcomes
+          .filter(o => o.success && o.result?.content)
+          .map(o => o.result.content)
+          .join('\n\n---\n\n');
+
+        // Fallback: use key findings if no content available
+        const content = recentContent || workingMemory.keyFindings.join('\n\n');
+
+        return {
+          content: content || 'No content available to analyze',
+          analysisType: 'extract',
+          extractionTargets: {
+            facts: true,
+            entities: true,
+            keyPhrases: true,
+            concepts: true
+          }
+        };
+
+      case 'synthesizer':
+        // Gather sources from working memory
+        const sources = workingMemory.recentOutcomes
+          .filter(o => o.success && (o.result?.content || o.result?.results))
+          .map(o => ({
+            content: o.result.content || JSON.stringify(o.result.results),
+            metadata: o.result.metadata || {}
+          }));
+
+        return {
+          synthesisGoal: goal.description,
+          sources: sources.length > 0 ? sources : [],
+          outputFormat: 'summary'
+        };
+
+      default:
+        return {};
+    }
   }
 
   /**
