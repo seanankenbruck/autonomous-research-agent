@@ -218,6 +218,9 @@ export class AnalyzeTool extends BaseTool<AnalyzeInput, AnalyzeOutput, AnalyzeCo
 
     const truncatedContent = this.truncateText(content, 8000);
 
+    console.log('[DEBUG] extractFacts called with content length:', content.length);
+    console.log('[DEBUG] Content preview (first 200 chars):', content.substring(0, 200));
+
     const response = await this.llmClient.complete([
       {
         role: 'user',
@@ -261,18 +264,28 @@ Return your response as a JSON array of fact objects. If no facts found, return:
 
     const text = this.llmClient.extractText(response).trim();
 
+    // Log the raw response for debugging
+    console.log('[DEBUG] Raw LLM response for fact extraction:', text.substring(0, 500));
+
     try {
       // Try to parse as JSON
       const facts = JSON.parse(text);
-      if (!Array.isArray(facts)) return [];
+      if (!Array.isArray(facts)) {
+        console.log('[DEBUG] LLM response is not an array:', typeof facts);
+        return [];
+      }
 
-      return facts.map(f => ({
+      const parsedFacts = facts.map(f => ({
         statement: f.statement || '',
         confidence: typeof f.confidence === 'number' ? f.confidence : 0.5,
         sources: Array.isArray(f.sources) ? f.sources : [],
       }));
-    } catch {
+
+      console.log('[DEBUG] Successfully parsed', parsedFacts.length, 'facts');
+      return parsedFacts;
+    } catch (error) {
       // Fallback: parse text-based response
+      console.log('[DEBUG] JSON parse failed, using text parser. Error:', error instanceof Error ? error.message : String(error));
       return this.parseFactsFromText(text);
     }
   }

@@ -91,7 +91,7 @@ export class ReasoningEngine {
     );
 
     // Generate reasoning options using LLM
-    const options = await this.generateReasoningOptions(context);
+    const options = await this.generateReasoningOptions(context, workingMemory);
 
     // Select best option
     const selectedOption = this.selectBestOption(options);
@@ -166,7 +166,8 @@ export class ReasoningEngine {
    * Generate reasoning options using LLM
    */
   private async generateReasoningOptions(
-    context: ReasoningContext
+    context: ReasoningContext,
+    workingMemory?: WorkingMemory
   ): Promise<ReasoningOption[]> {
     const prompt = this.buildReasoningPrompt(context);
 
@@ -203,8 +204,8 @@ export class ReasoningEngine {
       return data.options;
     } catch (error) {
       this.logger.error('Failed to generate reasoning options', { error });
-      // Return fallback option
-      return [this.getFallbackOption(context)];
+      // Return fallback option with working memory for content checking
+      return [this.getFallbackOption(context, workingMemory)];
     }
   }
 
@@ -280,7 +281,15 @@ Consider:
 - What would move us closer to the goal?
 - What has worked in similar situations?
 - What risks should we avoid?
-- Choose actions appropriate for the current phase (${context.currentProgress.currentPhase})`;
+- Choose actions appropriate for the current phase (${context.currentProgress.currentPhase})
+
+RECOMMENDED WORKFLOW:
+1. Use web_search to find relevant sources (returns URLs and snippets)
+2. Use web_fetch to get full content from promising URLs (returns complete page text)
+3. Use content_analyzer to extract facts from fetched content (requires substantial content > 500 chars)
+4. Use synthesizer once you have sufficient facts (3+ facts) to create final output
+
+NOTE: content_analyzer needs FULL PAGE CONTENT from web_fetch, not just search snippets. Always fetch content before analyzing.`;
   }
 
   /**
@@ -335,27 +344,60 @@ Provide a concise analysis of the situation and the decision-making process.`;
   }
 
   /**
+   * Check if working memory has recently fetched content (full web pages)
+   */
+  private hasRecentFetchedContent(workingMemory: WorkingMemory): boolean {
+    // Check if any recent outcomes have full content from web_fetch
+    // Web fetch returns result.content as a string with substantial length
+    return workingMemory.recentOutcomes.some(
+      outcome => outcome.success &&
+                 outcome.result?.content &&
+                 typeof outcome.result.content === 'string' &&
+                 outcome.result.content.length > 500 &&
+                 !outcome.result?.results  // Ensure it's not web_search (which has results array)
+    );
+  }
+
+  /**
    * Get fallback option when LLM fails
    */
-  private getFallbackOption(context: ReasoningContext): ReasoningOption {
+  private getFallbackOption(context: ReasoningContext, workingMemory?: WorkingMemory): ReasoningOption {
     // Intelligent fallback based on phase and progress
     let action: string;
     let rationale: string;
 
-    if (context.currentProgress.currentPhase === 'gathering' || context.currentProgress.sourcesGathered === 0) {
-      // Always start with web search if we have no sources or in gathering phase
+    const hasWebFetchContent = workingMemory ? this.hasRecentFetchedContent(workingMemory) : false;
+
+    // Priority order: facts → analysis → gathering
+
+    // 1. If we have enough facts, synthesize
+    if (context.currentProgress.factsExtracted > 3 ||
+        (context.currentProgress.currentPhase === 'synthesizing' && context.currentProgress.factsExtracted > 0)) {
+      action = 'synthesizer';
+      rationale = 'Fallback to synthesizer - have sufficient facts to create summary';
+    }
+    // 2. If we have fetched content but no facts, analyze it
+    else if (hasWebFetchContent && context.currentProgress.factsExtracted === 0) {
+      action = 'content_analyzer';
+      rationale = 'Fallback to content analyzer - have full content, need to extract facts';
+    }
+    // 3. If we have sources but no fetched content, fetch pages
+    else if (context.currentProgress.sourcesGathered >= 5 && !hasWebFetchContent) {
+      action = 'web_fetch';
+      rationale = 'Fallback to web fetch - need full content from sources for analysis';
+    }
+    // 4. If we have some sources but not enough, gather more
+    else if (context.currentProgress.sourcesGathered > 0 && context.currentProgress.sourcesGathered < 5) {
+      action = 'web_search';
+      rationale = 'Fallback to web search - gathering more sources before analysis';
+    }
+    // 5. If we have no sources, start gathering
+    else if (context.currentProgress.sourcesGathered === 0) {
       action = 'web_search';
       rationale = 'Fallback to web search - need to gather initial sources';
-    } else if (context.currentProgress.sourcesGathered > 0 && context.currentProgress.factsExtracted === 0) {
-      // We have sources but no facts - analyze them
-      action = 'content_analyzer';
-      rationale = 'Fallback to content analyzer - have sources but need to extract facts';
-    } else if (context.currentProgress.factsExtracted > 3) {
-      // We have enough facts - synthesize
-      action = 'synthesizer';
-      rationale = 'Fallback to synthesizer - have enough facts to create summary';
-    } else {
-      // Default: gather more information
+    }
+    // 6. Default: gather more information
+    else {
       action = 'web_search';
       rationale = 'Fallback to web search - need more information';
     }
@@ -553,10 +595,24 @@ Respond with a JSON object with a "learnings" array of strings.`;
         };
 
       case 'web_fetch':
-        // For fetch, try to extract URL from rationale or use a default approach
-        // This is a fallback - ideally the LLM should provide the URL
+        // For fetch, extract URL from recent search results
+        const searchResults = workingMemory.recentOutcomes
+          .filter(o => o.success && o.result?.results && Array.isArray(o.result.results))
+          .flatMap(o => o.result.results);
+
+        // Get the first URL from search results that hasn't been fetched yet
+        const fetchedUrls = new Set(
+          workingMemory.recentOutcomes
+            .filter(o => o.success && o.result?.url)
+            .map(o => o.result.url)
+        );
+
+        const urlToFetch = searchResults
+          .map((r: any) => r.url)
+          .filter((url: string) => url && !fetchedUrls.has(url))[0];
+
         return {
-          url: '', // Empty URL will cause validation error, which is expected
+          url: urlToFetch || (searchResults[0] as any)?.url || '', // Use first unfetched URL
           extractContent: true,
           includeMetadata: true
         };
@@ -590,6 +646,15 @@ Respond with a JSON object with a "learnings" array of strings.`;
         // Fallback: use key findings content if no other content available
         const content = combinedContent ||
           workingMemory.keyFindings.map(f => f.content).join('\n\n');
+
+        this.logger.debug('Content preparation for analyzer', {
+          fetchedContentLength: fetchedContent.length,
+          searchSnippetsLength: searchSnippets.length,
+          combinedContentLength: combinedContent.length,
+          finalContentLength: (content || 'No content available to analyze').length,
+          recentOutcomesCount: workingMemory.recentOutcomes.length,
+          contentPreview: content.substring(0, 300)
+        });
 
         return {
           content: content || 'No content available to analyze',
