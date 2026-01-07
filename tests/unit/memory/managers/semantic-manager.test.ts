@@ -126,7 +126,7 @@ describe('SemanticManager', () => {
           subcategory: sampleFact.subcategory,
           confidence: sampleFact.confidence,
           relevance: sampleFact.relevance,
-          tags: sampleFact.tags,
+          tags: sampleFact.tags.join(','), // Tags are stored as comma-separated string
         }),
         sampleFact.content
       );

@@ -221,18 +221,37 @@ export class AnalyzeTool extends BaseTool<AnalyzeInput, AnalyzeOutput, AnalyzeCo
     const response = await this.llmClient.complete([
       {
         role: 'user',
-        content: `Extract factual statements from the following content. For each fact, provide:
-1. The factual statement (clear and concise)
-2. Confidence level (0-1, where 1 is completely certain)
-3. Supporting sources if mentioned in the text
+        content: `Extract factual statements from the following content. You MUST respond with ONLY valid JSON - no markdown, no code blocks, no explanations.
 
-Content:
+CRITICAL REQUIREMENTS:
+- Each fact MUST be an object with THREE fields: "statement", "confidence", "sources"
+- "statement" must be a complete factual sentence (string)
+- "confidence" must be a decimal number between 0 and 1
+- "sources" must be an array of strings (can be empty if no sources mentioned)
+- DO NOT return an array of strings - each item MUST be an object
+
+CORRECT FORMAT EXAMPLES:
+[
+  {
+    "statement": "Quantum computers use qubits that can exist in superposition states",
+    "confidence": 0.95,
+    "sources": ["Nature Physics", "IBM Research"]
+  },
+  {
+    "statement": "Google achieved quantum supremacy in 2019",
+    "confidence": 0.9,
+    "sources": []
+  }
+]
+
+INCORRECT FORMATS (DO NOT USE):
+["fact one", "fact two"]  ❌ WRONG - these are strings, not objects
+[{"text": "fact"}]  ❌ WRONG - missing required fields
+
+Content to analyze:
 ${truncatedContent}
 
-Return ONLY a valid JSON array in this exact format:
-[{"statement": "fact here", "confidence": 0.9, "sources": ["source1"]}]
-
-If no facts are found, return an empty array: []`,
+Return your response as a JSON array of fact objects. If no facts found, return: []`,
       },
     ], {
       model: this.config.llmModel,

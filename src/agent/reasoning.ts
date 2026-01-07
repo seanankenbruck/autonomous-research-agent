@@ -563,14 +563,33 @@ Respond with a JSON object with a "learnings" array of strings.`;
 
       case 'content_analyzer':
         // Analyze tool needs content from previously fetched sources
-        // Combine all content from recent successful outcomes
-        const recentContent = workingMemory.recentOutcomes
+        // Gather content from multiple sources:
+        // 1. Full content from web_fetch results
+        const fetchedContent = workingMemory.recentOutcomes
           .filter(o => o.success && o.result?.content)
           .map(o => o.result.content)
           .join('\n\n---\n\n');
 
-        // Fallback: use key findings if no content available
-        const content = recentContent || workingMemory.keyFindings.join('\n\n');
+        // 2. Snippets/summaries from web_search results
+        const searchSnippets = workingMemory.recentOutcomes
+          .filter(o => o.success && o.result?.results && Array.isArray(o.result.results))
+          .flatMap(o => o.result.results)
+          .map((r: any) => {
+            const title = r.title || '';
+            const snippet = r.content || r.snippet || r.description || '';
+            return title && snippet ? `${title}\n${snippet}` : snippet;
+          })
+          .filter(Boolean)
+          .join('\n\n---\n\n');
+
+        // Combine all available content
+        const combinedContent = [fetchedContent, searchSnippets]
+          .filter(Boolean)
+          .join('\n\n========\n\n');
+
+        // Fallback: use key findings content if no other content available
+        const content = combinedContent ||
+          workingMemory.keyFindings.map(f => f.content).join('\n\n');
 
         return {
           content: content || 'No content available to analyze',
