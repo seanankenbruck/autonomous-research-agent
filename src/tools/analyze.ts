@@ -218,21 +218,43 @@ export class AnalyzeTool extends BaseTool<AnalyzeInput, AnalyzeOutput, AnalyzeCo
 
     const truncatedContent = this.truncateText(content, 8000);
 
+    console.log('[DEBUG] extractFacts called with content length:', content.length);
+    console.log('[DEBUG] Content preview (first 200 chars):', content.substring(0, 200));
+
     const response = await this.llmClient.complete([
       {
         role: 'user',
-        content: `Extract factual statements from the following content. For each fact, provide:
-1. The factual statement (clear and concise)
-2. Confidence level (0-1, where 1 is completely certain)
-3. Supporting sources if mentioned in the text
+        content: `Extract factual statements from the following content. You MUST respond with ONLY valid JSON - no markdown, no code blocks, no explanations.
 
-Content:
+CRITICAL REQUIREMENTS:
+- Each fact MUST be an object with THREE fields: "statement", "confidence", "sources"
+- "statement" must be a complete factual sentence (string)
+- "confidence" must be a decimal number between 0 and 1
+- "sources" must be an array of strings (can be empty if no sources mentioned)
+- DO NOT return an array of strings - each item MUST be an object
+
+CORRECT FORMAT EXAMPLES:
+[
+  {
+    "statement": "Quantum computers use qubits that can exist in superposition states",
+    "confidence": 0.95,
+    "sources": ["Nature Physics", "IBM Research"]
+  },
+  {
+    "statement": "Google achieved quantum supremacy in 2019",
+    "confidence": 0.9,
+    "sources": []
+  }
+]
+
+INCORRECT FORMATS (DO NOT USE):
+["fact one", "fact two"]  ❌ WRONG - these are strings, not objects
+[{"text": "fact"}]  ❌ WRONG - missing required fields
+
+Content to analyze:
 ${truncatedContent}
 
-Return ONLY a valid JSON array in this exact format:
-[{"statement": "fact here", "confidence": 0.9, "sources": ["source1"]}]
-
-If no facts are found, return an empty array: []`,
+Return your response as a JSON array of fact objects. If no facts found, return: []`,
       },
     ], {
       model: this.config.llmModel,
@@ -242,18 +264,28 @@ If no facts are found, return an empty array: []`,
 
     const text = this.llmClient.extractText(response).trim();
 
+    // Log the raw response for debugging
+    console.log('[DEBUG] Raw LLM response for fact extraction:', text.substring(0, 500));
+
     try {
       // Try to parse as JSON
       const facts = JSON.parse(text);
-      if (!Array.isArray(facts)) return [];
+      if (!Array.isArray(facts)) {
+        console.log('[DEBUG] LLM response is not an array:', typeof facts);
+        return [];
+      }
 
-      return facts.map(f => ({
+      const parsedFacts = facts.map(f => ({
         statement: f.statement || '',
         confidence: typeof f.confidence === 'number' ? f.confidence : 0.5,
         sources: Array.isArray(f.sources) ? f.sources : [],
       }));
-    } catch {
+
+      console.log('[DEBUG] Successfully parsed', parsedFacts.length, 'facts');
+      return parsedFacts;
+    } catch (error) {
       // Fallback: parse text-based response
+      console.log('[DEBUG] JSON parse failed, using text parser. Error:', error instanceof Error ? error.message : String(error));
       return this.parseFactsFromText(text);
     }
   }

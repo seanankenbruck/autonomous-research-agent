@@ -146,16 +146,45 @@ export class ChromaVectorStore implements IVectorStore {
       // Get collection
       const collectionResult = await this.getCollection(collection);
 
-      // Store in Chroma
-      await collectionResult.add({
-        ids: [id],
-        embeddings: [embedding],
-        documents: [document],
-        metadatas: [metadata],
-      });
+      // Try to add; if ID exists, update instead
+      try {
+        await collectionResult.add({
+          ids: [id],
+          embeddings: [embedding],
+          documents: [document],
+          metadatas: [metadata],
+        });
+      } catch (addError: any) {
+        // If the error is about duplicate IDs, try updating instead
+        if (addError?.message?.includes('duplicate') || addError?.message?.includes('already exists')) {
+          console.log(`[VectorStore] ID '${id}' exists, updating instead of adding`);
+          await collectionResult.update({
+            ids: [id],
+            embeddings: [embedding],
+            documents: [document],
+            metadatas: [metadata],
+          });
+        } else {
+          // Re-throw if it's a different error
+          throw addError;
+        }
+      }
     } catch (error) {
+      // Log detailed error information for debugging
+      const errorDetails = error instanceof Error
+        ? { message: error.message, stack: error.stack, cause: (error as any).cause }
+        : { raw: String(error) };
+
+      console.error(`[VectorStore] Failed to store embedding '${id}':`, {
+        collection,
+        embeddingDimension: embedding.length,
+        documentLength: document.length,
+        metadataKeys: Object.keys(metadata),
+        error: errorDetails
+      });
+
       throw new VectorStoreError(
-        `Failed to store embedding '${id}' in collection '${collection}'`,
+        `Failed to store embedding '${id}' in collection '${collection}': ${error instanceof Error ? error.message : String(error)}`,
         error instanceof Error ? error : undefined
       );
     }

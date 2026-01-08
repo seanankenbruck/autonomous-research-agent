@@ -91,7 +91,7 @@ export class ReasoningEngine {
     );
 
     // Generate reasoning options using LLM
-    const options = await this.generateReasoningOptions(context);
+    const options = await this.generateReasoningOptions(context, workingMemory);
 
     // Select best option
     const selectedOption = this.selectBestOption(options);
@@ -113,7 +113,7 @@ export class ReasoningEngine {
       sessionId,
       type: this.inferActionType(selectedOption.action),
       tool: selectedOption.action,
-      parameters: this.extractParameters(selectedOption.action),
+      parameters: this.extractParameters(selectedOption.action, goal, selectedOption.rationale, workingMemory),
       reasoning: selectedOption.rationale,
       strategy: memoryContext.recommendedStrategies[0]?.strategyName,
       timestamp: new Date(),
@@ -166,7 +166,8 @@ export class ReasoningEngine {
    * Generate reasoning options using LLM
    */
   private async generateReasoningOptions(
-    context: ReasoningContext
+    context: ReasoningContext,
+    workingMemory?: WorkingMemory
   ): Promise<ReasoningOption[]> {
     const prompt = this.buildReasoningPrompt(context);
 
@@ -203,8 +204,8 @@ export class ReasoningEngine {
       return data.options;
     } catch (error) {
       this.logger.error('Failed to generate reasoning options', { error });
-      // Return fallback option
-      return [this.getFallbackOption(context)];
+      // Return fallback option with working memory for content checking
+      return [this.getFallbackOption(context, workingMemory)];
     }
   }
 
@@ -242,20 +243,53 @@ ${context.relevantMemories.slice(0, 5).map((m, i) => `${i + 1}. ${m}`).join('\n'
 CONSTRAINTS:
 ${context.constraints.map((c, i) => `${i + 1}. ${c}`).join('\n') || 'None'}
 
-Propose 2-4 different actions I could take next. For each option, provide:
-1. A unique ID (option-1, option-2, etc.)
-2. The action/tool to use
-3. Rationale for this action
-4. Expected benefit
-5. Potential risks
-6. Estimated cost (1-10, where 1 is cheap, 10 is expensive)
-7. Confidence (0-1, how confident you are this will help)
+Propose 2-4 different actions I could take next. You MUST respond with ONLY valid JSON in this exact format:
+
+{
+  "options": [
+    {
+      "id": "option-1",
+      "action": "web_search",
+      "rationale": "Need to gather initial information about the topic",
+      "expectedBenefit": "Will provide foundational knowledge and credible sources",
+      "potentialRisks": ["May find outdated information", "Results may vary in quality"],
+      "estimatedCost": 3,
+      "confidence": 0.8
+    },
+    {
+      "id": "option-2",
+      "action": "content_analyzer",
+      "rationale": "Analyze previously fetched content to extract facts",
+      "expectedBenefit": "Extract structured information from existing sources",
+      "potentialRisks": ["Content may not contain relevant facts"],
+      "estimatedCost": 2,
+      "confidence": 0.7
+    }
+  ]
+}
+
+IMPORTANT RULES:
+- The "action" field MUST be one of: ${context.availableTools.join(', ')}
+- The "potentialRisks" field MUST be an array of strings
+- The "estimatedCost" field MUST be a number from 1-10
+- The "confidence" field MUST be a decimal number from 0-1
+- Do NOT include any markdown formatting or code blocks
+- Do NOT include any text before or after the JSON object
 
 Consider:
 - What information gaps exist?
 - What would move us closer to the goal?
 - What has worked in similar situations?
-- What risks should we avoid?`;
+- What risks should we avoid?
+- Choose actions appropriate for the current phase (${context.currentProgress.currentPhase})
+
+RECOMMENDED WORKFLOW:
+1. Use web_search to find relevant sources (returns URLs and snippets)
+2. Use web_fetch to get full content from promising URLs (returns complete page text)
+3. Use content_analyzer to extract facts from fetched content (requires substantial content > 500 chars)
+4. Use synthesizer once you have sufficient facts (3+ facts) to create final output
+
+NOTE: content_analyzer needs FULL PAGE CONTENT from web_fetch, not just search snippets. Always fetch content before analyzing.`;
   }
 
   /**
@@ -310,18 +344,70 @@ Provide a concise analysis of the situation and the decision-making process.`;
   }
 
   /**
+   * Check if working memory has recently fetched content (full web pages)
+   */
+  private hasRecentFetchedContent(workingMemory: WorkingMemory): boolean {
+    // Check if any recent outcomes have full content from web_fetch
+    // Web fetch returns result.content as a string with substantial length
+    return workingMemory.recentOutcomes.some(
+      outcome => outcome.success &&
+                 outcome.result?.content &&
+                 typeof outcome.result.content === 'string' &&
+                 outcome.result.content.length > 500 &&
+                 !outcome.result?.results  // Ensure it's not web_search (which has results array)
+    );
+  }
+
+  /**
    * Get fallback option when LLM fails
    */
-  private getFallbackOption(context: ReasoningContext): ReasoningOption {
-    // Default to search if in early phase, otherwise synthesize
-    const action = context.currentProgress.currentPhase === 'gathering' ? 'search' : 'synthesize';
+  private getFallbackOption(context: ReasoningContext, workingMemory?: WorkingMemory): ReasoningOption {
+    // Intelligent fallback based on phase and progress
+    let action: string;
+    let rationale: string;
+
+    const hasWebFetchContent = workingMemory ? this.hasRecentFetchedContent(workingMemory) : false;
+
+    // Priority order: facts → analysis → gathering
+
+    // 1. If we have enough facts, synthesize
+    if (context.currentProgress.factsExtracted > 3 ||
+        (context.currentProgress.currentPhase === 'synthesizing' && context.currentProgress.factsExtracted > 0)) {
+      action = 'synthesizer';
+      rationale = 'Fallback to synthesizer - have sufficient facts to create summary';
+    }
+    // 2. If we have fetched content but no facts, analyze it
+    else if (hasWebFetchContent && context.currentProgress.factsExtracted === 0) {
+      action = 'content_analyzer';
+      rationale = 'Fallback to content analyzer - have full content, need to extract facts';
+    }
+    // 3. If we have sources but no fetched content, fetch pages
+    else if (context.currentProgress.sourcesGathered >= 5 && !hasWebFetchContent) {
+      action = 'web_fetch';
+      rationale = 'Fallback to web fetch - need full content from sources for analysis';
+    }
+    // 4. If we have some sources but not enough, gather more
+    else if (context.currentProgress.sourcesGathered > 0 && context.currentProgress.sourcesGathered < 5) {
+      action = 'web_search';
+      rationale = 'Fallback to web search - gathering more sources before analysis';
+    }
+    // 5. If we have no sources, start gathering
+    else if (context.currentProgress.sourcesGathered === 0) {
+      action = 'web_search';
+      rationale = 'Fallback to web search - need to gather initial sources';
+    }
+    // 6. Default: gather more information
+    else {
+      action = 'web_search';
+      rationale = 'Fallback to web search - need more information';
+    }
 
     return {
       id: 'fallback-option',
       action,
-      rationale: 'Fallback action due to reasoning failure',
-      expectedBenefit: 'Continue making progress',
-      potentialRisks: ['May not be optimal'],
+      rationale,
+      expectedBenefit: 'Continue making progress with safe default action',
+      potentialRisks: ['May not be the optimal action for current situation'],
       estimatedCost: 5,
       confidence: 0.3,
     };
@@ -495,11 +581,110 @@ Respond with a JSON object with a "learnings" array of strings.`;
 
   /**
    * Extract parameters from action string
-   * This is a simple implementation - can be enhanced
+   * Enriches parameters with data from working memory
    */
-  private extractParameters(action: string): Record<string, any> {
-    // For now, return empty params - will be filled by agent core
-    return {};
+  private extractParameters(action: string, goal: Goal, rationale: string, workingMemory: WorkingMemory): Record<string, any> {
+    // Generate sensible default parameters based on the tool and context
+    switch (action) {
+      case 'web_search':
+        // Extract search query from goal description or rationale
+        return {
+          query: goal.description,
+          maxResults: 10,
+          searchDepth: 'basic'
+        };
+
+      case 'web_fetch':
+        // For fetch, extract URL from recent search results
+        const searchResults = workingMemory.recentOutcomes
+          .filter(o => o.success && o.result?.results && Array.isArray(o.result.results))
+          .flatMap(o => o.result.results);
+
+        // Get the first URL from search results that hasn't been fetched yet
+        const fetchedUrls = new Set(
+          workingMemory.recentOutcomes
+            .filter(o => o.success && o.result?.url)
+            .map(o => o.result.url)
+        );
+
+        const urlToFetch = searchResults
+          .map((r: any) => r.url)
+          .filter((url: string) => url && !fetchedUrls.has(url))[0];
+
+        return {
+          url: urlToFetch || (searchResults[0] as any)?.url || '', // Use first unfetched URL
+          extractContent: true,
+          includeMetadata: true
+        };
+
+      case 'content_analyzer':
+        // Analyze tool needs content from previously fetched sources
+        // Gather content from multiple sources:
+        // 1. Full content from web_fetch results
+        const fetchedContent = workingMemory.recentOutcomes
+          .filter(o => o.success && o.result?.content)
+          .map(o => o.result.content)
+          .join('\n\n---\n\n');
+
+        // 2. Snippets/summaries from web_search results
+        const searchSnippets = workingMemory.recentOutcomes
+          .filter(o => o.success && o.result?.results && Array.isArray(o.result.results))
+          .flatMap(o => o.result.results)
+          .map((r: any) => {
+            const title = r.title || '';
+            const snippet = r.content || r.snippet || r.description || '';
+            return title && snippet ? `${title}\n${snippet}` : snippet;
+          })
+          .filter(Boolean)
+          .join('\n\n---\n\n');
+
+        // Combine all available content
+        const combinedContent = [fetchedContent, searchSnippets]
+          .filter(Boolean)
+          .join('\n\n========\n\n');
+
+        // Fallback: use key findings content if no other content available
+        const content = combinedContent ||
+          workingMemory.keyFindings.map(f => f.content).join('\n\n');
+
+        this.logger.debug('Content preparation for analyzer', {
+          fetchedContentLength: fetchedContent.length,
+          searchSnippetsLength: searchSnippets.length,
+          combinedContentLength: combinedContent.length,
+          finalContentLength: (content || 'No content available to analyze').length,
+          recentOutcomesCount: workingMemory.recentOutcomes.length,
+          contentPreview: content.substring(0, 300)
+        });
+
+        return {
+          content: content || 'No content available to analyze',
+          analysisType: 'extract',
+          extractionTargets: {
+            facts: true,
+            entities: true,
+            keyPhrases: true,
+            concepts: true
+          }
+        };
+
+      case 'synthesizer':
+        // Gather sources from working memory
+        const sources = workingMemory.recentOutcomes
+          .filter(o => o.success && (o.result?.content || o.result?.results))
+          .map(o => ({
+            content: o.result.content || JSON.stringify(o.result.results),
+            metadata: o.result.metadata || {}
+          }));
+
+        return {
+          synthesisGoal: goal.description,
+          sources: sources.length > 0 ? sources : [],
+          outputFormat: 'summary'
+        };
+
+      default:
+        return {};
+    }
   }
 
   /**

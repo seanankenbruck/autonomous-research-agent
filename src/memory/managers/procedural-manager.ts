@@ -66,7 +66,8 @@ export class ProceduralManager {
           strategyName: fullStrategy.strategyName,
           successRate: fullStrategy.successRate,
           timesUsed: fullStrategy.timesUsed,
-          requiredTools: fullStrategy.requiredTools,
+          // Store requiredTools as comma-separated string (ChromaDB requires primitives)
+          requiredTools: fullStrategy.requiredTools.join(','),
         },
         embeddingText
       );

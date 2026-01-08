@@ -287,7 +287,7 @@ describe('End-to-End Research', () => {
       };
     });
 
-    const searchTool = toolRegistry.getTool('search');
+    const searchTool = toolRegistry.getTool('web_search');
     if (searchTool) {
       vi.spyOn(searchTool, 'execute').mockImplementation(async () => {
         iteration++;

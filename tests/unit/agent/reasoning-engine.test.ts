@@ -235,12 +235,14 @@ describe('ReasoningEngine', () => {
         sessionId
       );
 
-      expect(gatheringResult.selectedAction.tool).toBe('search');
+      expect(gatheringResult.selectedAction.tool).toBe('web_search');
 
       // Test synthesis phase - should default to synthesize on failure
       const synthesisProgress: Progress = {
         ...initialState.progress,
-        currentPhase: 'synthesis',
+        currentPhase: 'synthesizing',
+        sourcesGathered: 10, // Has sources
+        factsExtracted: 5, // Has facts, so should synthesize
       };
 
       const synthesisResult = await reasoningEngine.reason(
@@ -252,7 +254,7 @@ describe('ReasoningEngine', () => {
         sessionId
       );
 
-      expect(synthesisResult.selectedAction.tool).toBe('synthesize');
+      expect(synthesisResult.selectedAction.tool).toBe('synthesizer');
     });
 
     it('should build proper prompts with goal and progress', async () => {
@@ -518,10 +520,10 @@ describe('ReasoningEngine', () => {
       });
 
       const tools = [
-        { name: 'search', description: 'Search', version: '1.0.0', config: {} },
-        { name: 'fetch', description: 'Fetch', version: '1.0.0', config: {} },
-        { name: 'analyze', description: 'Analyze', version: '1.0.0', config: {} },
-        { name: 'synthesize', description: 'Synthesize', version: '1.0.0', config: {} },
+        { name: 'web_search', description: 'Search', version: '1.0.0', config: {} },
+        { name: 'web_fetch', description: 'Fetch', version: '1.0.0', config: {} },
+        { name: 'content_analyzer', description: 'Analyze', version: '1.0.0', config: {} },
+        { name: 'synthesizer', description: 'Synthesize', version: '1.0.0', config: {} },
       ];
 
       const result = await reasoningEngine.reason(
@@ -533,9 +535,18 @@ describe('ReasoningEngine', () => {
         'test-session'
       );
 
-      // Check that the action type matches the tool name
+      // Check that the action type is correctly inferred from tool name
       expect(['search', 'fetch', 'analyze', 'synthesize']).toContain(result.selectedAction.type);
-      expect(result.selectedAction.type).toBe(result.selectedAction.tool);
+      // The type should be inferred from the tool name (e.g., 'web_search' -> 'search')
+      if (result.selectedAction.tool === 'web_search') {
+        expect(result.selectedAction.type).toBe('search');
+      } else if (result.selectedAction.tool === 'web_fetch') {
+        expect(result.selectedAction.type).toBe('fetch');
+      } else if (result.selectedAction.tool === 'content_analyzer') {
+        expect(result.selectedAction.type).toBe('analyze');
+      } else if (result.selectedAction.tool === 'synthesizer') {
+        expect(result.selectedAction.type).toBe('synthesize');
+      }
     });
 
     it('should generate unique IDs for reasoning and actions', async () => {

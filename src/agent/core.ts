@@ -337,7 +337,7 @@ Aim for 5-8 steps that logically progress from information gathering → analysi
       {
         id: 'step-1',
         description: 'Search for initial information on topic',
-        action: 'search',
+        action: 'web_search',
         dependencies: [],
         status: 'pending',
         expectedOutcome: 'Relevant sources and initial information',
@@ -345,7 +345,7 @@ Aim for 5-8 steps that logically progress from information gathering → analysi
       {
         id: 'step-2',
         description: 'Fetch and extract content from promising sources',
-        action: 'fetch',
+        action: 'web_fetch',
         dependencies: ['step-1'],
         status: 'pending',
         expectedOutcome: 'Detailed content from sources',
@@ -353,7 +353,7 @@ Aim for 5-8 steps that logically progress from information gathering → analysi
       {
         id: 'step-3',
         description: 'Analyze content to extract key facts',
-        action: 'analyze',
+        action: 'content_analyzer',
         dependencies: ['step-2'],
         status: 'pending',
         expectedOutcome: 'Structured facts and insights',
@@ -361,7 +361,7 @@ Aim for 5-8 steps that logically progress from information gathering → analysi
       {
         id: 'step-4',
         description: 'Search for additional information to fill gaps',
-        action: 'search',
+        action: 'web_search',
         dependencies: ['step-3'],
         status: 'pending',
         expectedOutcome: 'Additional sources addressing gaps',
@@ -369,7 +369,7 @@ Aim for 5-8 steps that logically progress from information gathering → analysi
       {
         id: 'step-5',
         description: 'Synthesize findings into cohesive result',
-        action: 'synthesize',
+        action: 'synthesizer',
         dependencies: ['step-3', 'step-4'],
         status: 'pending',
         expectedOutcome: 'Final synthesized research output',
@@ -611,14 +611,50 @@ Aim for 5-8 steps that logically progress from information gathering → analysi
       progress.currentPhase = 'synthesizing';
     }
 
-    // Update counters based on outcome
+    // Update counters and working memory based on outcome
     if (outcome.success && outcome.result) {
       const data = outcome.result as any;
+
+      // Track sources gathered
       if (data.results && Array.isArray(data.results)) {
         progress.sourcesGathered += data.results.length;
       }
+
+      // Track facts extracted AND add them to working memory
       if (data.facts && Array.isArray(data.facts)) {
         progress.factsExtracted += data.facts.length;
+
+        // Get source URLs from recent search results
+        const recentSearchResults = this.currentState!.workingMemory.recentOutcomes
+          .filter(o => o.success && o.result?.results && Array.isArray(o.result.results))
+          .flatMap(o => o.result.results);
+
+        // Add extracted facts to working memory as key findings
+        data.facts.forEach((fact: any, index: number) => {
+          // Try to match fact to a source based on index or use first available
+          const matchedSource = recentSearchResults[index] || recentSearchResults[0];
+
+          this.currentState!.workingMemory.keyFindings.push({
+            id: `finding_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+            content: fact.statement || fact.content || String(fact),
+            confidence: fact.confidence || 0.7,
+            relevance: 0.8,
+            verificationStatus: 'unverified' as const,
+            relatedFindings: [],
+            source: {
+              url: matchedSource?.url || outcome.metadata?.url || '',
+              title: matchedSource?.title || outcome.metadata?.title || 'Research Finding',
+              type: 'webpage' as const,
+              credibilityScore: fact.confidence || 0.7
+            },
+            timestamp: new Date()
+          });
+        });
+
+        this.logger.debug('Added facts to working memory', {
+          factsAdded: data.facts.length,
+          totalFindings: this.currentState!.workingMemory.keyFindings.length,
+        });
       }
     }
 
@@ -707,11 +743,20 @@ Aim for 5-8 steps that logically progress from information gathering → analysi
     }
 
     // Use synthesize tool to create final output
-    const synthesizeTool = this.toolRegistry.getTool('synthesize');
+    const synthesizeTool = this.toolRegistry.getTool('synthesizer');
+
+    this.logger.debug('Synthesizer tool lookup', {
+      found: !!synthesizeTool,
+      findingsCount: this.currentState.workingMemory.keyFindings.length,
+    });
 
     if (synthesizeTool) {
+      this.logger.info('Executing synthesizer tool', {
+        findingsCount: this.currentState.workingMemory.keyFindings.length,
+      });
+
       const result = await this.toolRegistry.executeTool(
-        'synthesize',
+        'synthesizer',
         {
           sources: this.currentState.workingMemory.keyFindings.map(f => ({
             content: f.content,
@@ -725,6 +770,11 @@ Aim for 5-8 steps that logically progress from information gathering → analysi
           sessionId,
         }
       );
+
+      this.logger.debug('Synthesizer tool result', {
+        success: result.success,
+        hasData: !!result.data,
+      });
 
       if (result.success && result.data) {
         const data = result.data as any;
@@ -745,7 +795,14 @@ Aim for 5-8 steps that logically progress from information gathering → analysi
           challenges: this.currentState.reflections.flatMap(r => r.progressAssessment.blockers),
           suggestions: this.currentState.reflections.flatMap(r => r.strategyEvaluation.alternativeStrategies),
         };
+      } else {
+        this.logger.warn('Synthesizer tool returned no data or failed', {
+          success: result.success,
+          error: result.error,
+        });
       }
+    } else {
+      this.logger.warn('Synthesizer tool not found, using fallback');
     }
 
     // Fallback synthesis

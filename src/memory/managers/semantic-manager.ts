@@ -162,8 +162,8 @@ Return only the JSON array, no additional text.`;
           subcategory: fact.subcategory || '',
           confidence: fact.confidence,
           relevance: fact.relevance,
-          // Store tags as array for potential filtering
-          tags: fact.tags,
+          // Store tags as comma-separated string (ChromaDB requires primitives)
+          tags: fact.tags.join(','),
         },
         fact.content
       );
